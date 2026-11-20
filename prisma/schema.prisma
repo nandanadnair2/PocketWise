@@ -1,0 +1,198 @@
+// PocketWise: parent-controlled kids card (MOCK LEDGER ONLY, no real money)
+// All amounts are integers in paise (1 INR = 100 paise) to avoid float errors.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql" // hosted Postgres from day one so data persists once deployed
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum Role {
+  PARENT
+  CHILD
+}
+
+enum LimitPeriod {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum Category {
+  FOOD
+  GAMES
+  BOOKS
+  TRANSPORT
+  SHOPPING
+  OTHER
+}
+
+enum TxType {
+  ALLOWANCE_CREDIT // parent adds money
+  PURCHASE         // child spends
+  GOAL_TRANSFER    // money moved into a savings goal
+  REFUND
+}
+
+enum TxStatus {
+  APPROVED
+  DECLINED_LIMIT   // blocked by the limit engine
+  DECLINED_FROZEN  // card frozen by parent
+  FLAGGED          // anomaly detector raised it for parent review
+  REVERSED
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AlertKind {
+  LIMIT_50
+  LIMIT_80
+  LIMIT_95
+  LIMIT_HIT
+  ANOMALY
+  REQUEST_RECEIVED
+}
+
+// ---------- Users ----------
+
+model User {
+  id           String   @id @default(cuid())
+  role         Role
+  name         String
+  email        String?  @unique // children may have no email; parents sign in with email
+  passwordHash String?  // argon2/bcrypt hash, never the raw password
+  pinHash      String?  // optional child PIN, hashed
+  parentId     String?  // set only for CHILD users
+  createdAt    DateTime @default(now())
+
+  parent   User?  @relation("ParentChildren", fields: [parentId], references: [id])
+  children User[] @relation("ParentChildren")
+
+  wallet           Wallet?
+  allowanceRequests AllowanceRequest[]
+  auditLogs        AuditLog[]
+
+  @@index([parentId])
+}
+
+// ---------- Wallet and ledger ----------
+
+model Wallet {
+  id           String   @id @default(cuid())
+  childId      String   @unique
+  balance      Int      @default(0) // paise; never negative (enforced in DB, see migration note)
+  frozen       Boolean  @default(false)
+  version      Int      @default(0) // optimistic locking counter
+  mockCardLast4 String  // fake card tail for the UI only
+  createdAt    DateTime @default(now())
+
+  child        User           @relation(fields: [childId], references: [id])
+  transactions Transaction[]
+  limits       Limit[]
+  goals        SavingsGoal[]
+  alerts       Alert[]
+}
+
+model Transaction {
+  id             String   @id @default(cuid())
+  walletId       String
+  type           TxType
+  status         TxStatus
+  amount         Int      // paise, always positive; direction comes from type
+  category       Category @default(OTHER)
+  merchant       String?
+  note           String?
+  idempotencyKey String   @unique // retried requests must not double-charge
+  anomalyScore   Float?   // filled in by the fraud model service
+  createdAt      DateTime @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@index([walletId, createdAt])
+  @@index([walletId, category, createdAt])
+}
+
+// ---------- Limit engine ----------
+
+model Limit {
+  id        String      @id @default(cuid())
+  walletId  String
+  period    LimitPeriod
+  category  Category?   // null = applies to all spending
+  amount    Int         // paise allowed per period
+  createdAt DateTime    @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@unique([walletId, period, category])
+}
+
+// ---------- Kid-facing features ----------
+
+model SavingsGoal {
+  id        String   @id @default(cuid())
+  walletId  String
+  title     String
+  target    Int      // paise
+  saved     Int      @default(0)
+  completed Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+}
+
+model AllowanceRequest {
+  id         String        @id @default(cuid())
+  childId    String
+  amount     Int           // paise requested
+  reason     String
+  status     RequestStatus @default(PENDING)
+  decidedAt  DateTime?
+  createdAt  DateTime      @default(now())
+
+  child User @relation(fields: [childId], references: [id])
+
+  @@index([childId, status])
+}
+
+// ---------- Alerts and audit ----------
+
+model Alert {
+  id        String    @id @default(cuid())
+  walletId  String
+  kind      AlertKind
+  message   String
+  read      Boolean   @default(false)
+  createdAt DateTime  @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@index([walletId, read])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String   // who did it
+  action    String   // e.g. "LIMIT_UPDATED", "CARD_FROZEN"
+  detail    Json?
+  createdAt DateTime @default(now())
+
+  actor User @relation(fields: [actorId], references: [id])
+
+  @@index([actorId, createdAt])
+}
+
+// MIGRATION NOTE (add by hand after the first `prisma migrate dev`):
+//   ALTER TABLE "Wallet" ADD CONSTRAINT balance_non_negative CHECK (balance >= 0);
+// Spending must run inside a DB transaction that locks the wallet row:
+//   SELECT * FROM "Wallet" WHERE id = $1 FOR UPDATE;
+// then check limits, insert the Transaction, and update balance in that same transaction.
