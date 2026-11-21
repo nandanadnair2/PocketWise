@@ -38,7 +38,7 @@ export default function ChildrenPage() {
     const res = await fetch('/api/auth/child', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newName, pin: newPin || undefined }),
+      body: JSON.stringify({ name: newName, pin: newPin }),
     })
     if (res.ok) {
       setNewName('')
@@ -82,13 +82,16 @@ export default function ChildrenPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">PIN (optional, 4-6 digits)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">PIN (4-6 digits, used to log in)</label>
               <input
                 type="password"
                 value={newPin}
                 onChange={(e) => setNewPin(e.target.value)}
                 className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                 maxLength={6}
+                pattern="[0-9]{4,6}"
+                title="PIN must be 4 to 6 digits"
+                required
               />
             </div>
             <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">

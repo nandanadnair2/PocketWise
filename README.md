@@ -77,3 +77,9 @@ prisma/schema.prisma        # Data model
 - **Week 3:** Kid UI (goals, badges, lessons) + allowance-request flow
 - **Week 4:** Fraud/anomaly detection on simulated transactions + evaluation metrics
 - **Week 5:** Guarded AI coach + jailbreak testing + deploy + demo video
+
+## Known limitations
+
+- **No login rate limiting yet.** Kid login is name + PIN (4–6 digits), so a guessed name plus a brute-forced PIN is possible in theory. Planned: login attempt limits and lockout.
+- Child names must be unique across all families (case-insensitive), because name + PIN is the login.
+- Mock ledger only: no real money, no real card numbers, no real children's data.

@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
+import { z } from 'zod'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
+
+// A child signs in with name + PIN, so the name must be unique and the PIN must exist.
+const createChildSchema = z.object({
+  name: z.string().trim().min(2, 'Name must be at least 2 characters').max(30, 'Name is too long'),
+  pin: z.coerce.string().regex(/^\d{4,6}$/, 'PIN must be 4 to 6 digits'),
+})
 
 // Parent creates a child account + wallet
 export async function POST(req: NextRequest) {
@@ -13,12 +20,28 @@ export async function POST(req: NextRequest) {
 
     const parentId = session.user.id as string
 
-    const { name, pin } = await req.json()
-    if (!name) {
-      return NextResponse.json({ error: 'Child name is required' }, { status: 400 })
+    const parsed = createChildSchema.safeParse(await req.json().catch(() => null))
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues[0]?.message ?? 'Invalid input' },
+        { status: 400 }
+      )
+    }
+    const { name, pin } = parsed.data
+
+    // Child names are used to sign in, so they must be unique (ignoring upper/lower case).
+    const taken = await prisma.user.findFirst({
+      where: { role: 'CHILD', name: { equals: name, mode: 'insensitive' } },
+      select: { id: true },
+    })
+    if (taken) {
+      return NextResponse.json(
+        { error: 'That name is already taken. Try adding an initial or number, like "Aman K".' },
+        { status: 409 }
+      )
     }
 
-    const pinHash = pin ? await bcrypt.hash(pin, 12) : null
+    const pinHash = await bcrypt.hash(pin, 12)
 
     // Generate a mock card last4 (fake, for UI only)
     const mockCardLast4 = String(Math.floor(1000 + Math.random() * 9000))

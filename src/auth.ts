@@ -19,7 +19,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         // Child login: name + PIN (children have no email)
         if (credentials.name && credentials.pin) {
           const child = await prisma.user.findFirst({
-            where: { name: credentials.name as string, role: 'CHILD' },
+            where: {
+              name: { equals: (credentials.name as string).trim(), mode: 'insensitive' },
+              role: 'CHILD',
+            },
           })
           if (!child || !child.pinHash) return null
           const valid = await bcrypt.compare(credentials.pin as string, child.pinHash)
