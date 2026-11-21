@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import SpendPanel from "@/components/kid/SpendPanel";
+import GoalsPanel from "@/components/kid/GoalsPanel";
 import RequestsPanel from "@/components/RequestsPanel";
 
 // ASSUMPTION: Tailwind is set up and the child signs in through your existing login.
@@ -114,6 +116,10 @@ export default function KidDashboard() {
           );
         })}
       </section>
+
+      <SpendPanel onDone={load} />
+
+      <GoalsPanel goals={data.goals} onChange={load} />
 
       <RequestsPanel onApproved={load} />
     </main>

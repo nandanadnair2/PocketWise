@@ -10,8 +10,24 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       credentials: {
         email: { label: 'Email', type: 'email' },
         password: { label: 'Password', type: 'password' },
+        name: { label: 'Name', type: 'text' },
+        pin: { label: 'PIN', type: 'password' },
       },
       async authorize(credentials) {
+        if (!credentials) return null
+
+        // Child login: name + PIN (children have no email)
+        if (credentials.name && credentials.pin) {
+          const child = await prisma.user.findFirst({
+            where: { name: credentials.name as string, role: 'CHILD' },
+          })
+          if (!child || !child.pinHash) return null
+          const valid = await bcrypt.compare(credentials.pin as string, child.pinHash)
+          if (!valid) return null
+          return { id: child.id, email: child.email, name: child.name, role: child.role, parentId: child.parentId }
+        }
+
+        // Parent login: email + password
         if (!credentials?.email || !credentials?.password) return null
 
         const user = await prisma.user.findUnique({
