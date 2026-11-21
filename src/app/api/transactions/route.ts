@@ -3,6 +3,7 @@ import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { checkLimits } from '@/lib/limits'
 import { txOptions } from '@/lib/tx-options'
+import { flagIfUnusual } from '@/lib/anomaly-server'
 
 // POST: create a transaction (purchase or allowance credit)
 // Uses DB transaction with row-level locking (SELECT ... FOR UPDATE) to prevent concurrent overspend
@@ -180,6 +181,16 @@ export async function POST(req: NextRequest) {
 
     if ((result as any).declined) {
       return NextResponse.json(result, { status: 402 })
+    }
+    // Anomaly scoring runs AFTER the money-moving transaction commits, so it never
+    // lengthens the wallet row lock. Fail-open: a scoring error must never break a purchase.
+    const txRec = (result as any).transaction
+    if (txRec && txRec.type === 'PURCHASE' && txRec.status === 'APPROVED') {
+      try {
+        await flagIfUnusual(txRec.id)
+      } catch (e) {
+        console.error('Anomaly scoring failed (fail-open):', e)
+      }
     }
     return NextResponse.json(result, { status: 201 })
   } catch (error: any) {

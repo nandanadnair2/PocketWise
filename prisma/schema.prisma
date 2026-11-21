@@ -113,6 +113,8 @@ model Transaction {
   note           String?
   idempotencyKey String   @unique // retried requests must not double-charge
   anomalyScore   Float?   // filled in by the fraud model service
+  anomalyReasons String[] // plain-language reasons when flagged for review
+  reviewedAt     DateTime? // set when a parent confirms or reverses a flagged purchase
   createdAt      DateTime @default(now())
 
   wallet Wallet @relation(fields: [walletId], references: [id])

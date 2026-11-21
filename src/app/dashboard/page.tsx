@@ -2,6 +2,7 @@ import { auth } from '@/auth'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import PendingRequests from '@/components/PendingRequests'
+import ReviewPrompt from '@/components/ReviewPrompt'
 
 export const instant = false
 
@@ -33,6 +34,7 @@ export default async function DashboardPage() {
 
         {role === 'PARENT' ? (
           <div className="space-y-6">
+            <ReviewPrompt />
             <div className="grid gap-6 md:grid-cols-2">
               <Link href="/parent/children" className="bg-white p-6 rounded-xl shadow hover:shadow-md transition">
                 <h2 className="text-xl font-semibold text-indigo-600 mb-2">👨‍👩‍👧 Manage Children</h2>
